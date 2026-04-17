@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Shooter Fixed</title>
+  <style>
+    body { margin:0; overflow:hidden; }
+    #crosshair {
+      position:fixed;
+      top:50%; left:50%;
+      width:8px; height:8px;
+      margin:-4px;
+      background:white;
+      border-radius:50%;
+    }
+  </style>
+</head>
+<body>
+
+<div id="crosshair"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+
+<script>
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x4fc3f7);
+
+const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+
+// свет
+const light = new THREE.DirectionalLight(0xffffff,1);
+light.position.set(10,20,10);
+scene.add(light);
+
+// ===== КАРТА =====
+const MAP = 50;
+const HALF = MAP/2;
+
+const obstacles = [];
+
+// пол
+const floor = new THREE.Mesh(
+  new THREE.PlaneGeometry(MAP, MAP),
+  new THREE.MeshStandardMaterial({color:0xd2b48c})
+);
+floor.rotation.x = -Math.PI/2;
+scene.add(floor);
+
+// стены границы
+function wall(x,z,w,d,color=0xaaaaaa){
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(w,3,d),
+    new THREE.MeshStandardMaterial({color})
+  );
+  mesh.position.set(x,1.5,z);
+  scene.add(mesh);
+  obstacles.push(mesh);
+}
+
+wall(0,-HALF,MAP,1);
+wall(0,HALF,MAP,1);
+wall(-HALF,0,1,MAP);
+wall(HALF,0,1,MAP);
+
+// препятствия
+for(let i=0;i<20;i++){
+  wall(
+    (Math.random()-0.5)*40,
+    (Math.random()-0.5)*40,
+    3,1,
+    0x8b4513
+  );
+}
+
+// ===== ОРУЖИЕ =====
+const gun = new THREE.Group();
+
+const body = new THREE.Mesh(
+  new THREE.BoxGeometry(0.4,0.2,1),
+  new THREE.MeshStandardMaterial({color:0x222})
+);
+
+const mag = new THREE.Mesh(
+  new THREE.BoxGeometry(0.2,0.5,0.2),
+  new THREE.MeshStandardMaterial({color:0x333})
+);
+mag.position.set(0,-0.4,0.2);
+
+gun.add(body);
+gun.add(mag);
+
+gun.position.set(0.5,-0.4,-1);
+camera.add(gun);
+scene.add(camera);
+
+// ===== УПРАВЛЕНИЕ =====
+const keys = {};
+document.addEventListener("keydown",e=>keys[e.key.toLowerCase()]=true);
+document.addEventListener("keyup",e=>keys[e.key.toLowerCase()]=false);
+
+document.body.onclick=()=>document.body.requestPointerLock();
+
+let yaw=0,pitch=0;
+
+document.addEventListener("mousemove",e=>{
+  if(document.pointerLockElement===document.body){
+    yaw -= e.movementX*0.001;
+    pitch -= e.movementY*0.001;
+    pitch=Math.max(-Math.PI/2,Math.min(Math.PI/2,pitch));
+  }
+});
+
+// ===== ПРЫЖОК =====
+let velocityY = 0;
+let onGround = true;
+
+// ===== КОЛЛИЗИИ =====
+function checkCollision(pos){
+  for(let o of obstacles){
+    const dx = Math.abs(pos.x - o.position.x);
+    const dz = Math.abs(pos.z - o.position.z);
+
+    if(dx < 1.5 && dz < 1.5){
+      return true;
+    }
+  }
+  return false;
+}
+
+// ===== ДВИЖЕНИЕ =====
+camera.position.set(0,1.6,0);
+
+function move(){
+  const speed = 0.1;
+
+  // направление только по XZ (фикс бага)
+  const forward = new THREE.Vector3(
+    Math.sin(yaw),
+    0,
+    Math.cos(yaw)
+  );
+
+  const right = new THREE.Vector3(
+    Math.cos(yaw),
+    0,
+    -Math.sin(yaw)
+  );
+
+  let newPos = camera.position.clone();
+
+  if(keys["w"]) newPos.addScaledVector(forward,-speed);
+  if(keys["s"]) newPos.addScaledVector(forward,speed);
+  if(keys["a"]) newPos.addScaledVector(right,-speed);
+  if(keys["d"]) newPos.addScaledVector(right,speed);
+
+  // границы
+  newPos.x = Math.max(-HALF+1, Math.min(HALF-1, newPos.x));
+  newPos.z = Math.max(-HALF+1, Math.min(HALF-1, newPos.z));
+
+  // коллизии
+  if(!checkCollision(newPos)){
+    camera.position.x = newPos.x;
+    camera.position.z = newPos.z;
+  }
+
+  // прыжок
+  if(keys[" "] && onGround){
+    velocityY = 0.2;
+    onGround = false;
+  }
+
+  velocityY -= 0.01;
+  camera.position.y += velocityY;
+
+  if(camera.position.y <= 1.6){
+    camera.position.y = 1.6;
+    velocityY = 0;
+    onGround = true;
+  }
+}
+
+// ===== LOOP =====
+function animate(){
+  requestAnimationFrame(animate);
+
+  move();
+
+  camera.rotation.order="YXZ";
+  camera.rotation.y=yaw;
+  camera.rotation.x=pitch;renderer.render(scene,camera);
+}
+animate();
+</script>
+
+</body>
+</html>
